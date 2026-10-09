@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로그인 · 쿠폰 시스템</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
+    --primary: #2563eb; --primary-weak: #eff4ff; --ok: #16a34a; --ok-weak: #ecfdf3;
+    --err: #dc2626; --err-weak: #fef2f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --text: #e6e8eb; --muted: #9aa1ac; --line: #2a2f38;
+      --primary: #5b8cff; --primary-weak: #1c2640; --ok: #3ccf74; --ok-weak: #13281c;
+      --err: #ff6b6b; --err-weak: #2d1717;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    display: grid; place-items: center; padding: 24px 16px; }
+  .wrap { width: 100%; max-width: 380px; }
+  .brand { text-align: center; margin-bottom: 20px; }
+  .brand .logo { font-size: 36px; }
+  .brand h1 { font-size: 20px; margin: 6px 0 2px; }
+  .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 10px; padding: 4px; margin-bottom: 8px; }
+  .tabs button { background: transparent; color: var(--muted); border: 0; border-radius: 8px; padding: 8px;
+    font: inherit; font-weight: 500; cursor: pointer; }
+  .tabs button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .submit { width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 8px; background: var(--primary);
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .submit:disabled { opacity: .6; cursor: wait; }
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+  .msg.err { background: var(--err-weak); color: var(--err); }
+  .msg.ok { background: var(--ok-weak); color: var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="logo">🎟️</div>
+    <h1>쿠폰 시스템</h1>
+    <p>선착순 쿠폰 발급 테스트</p>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="on" data-tab="login">로그인</button>
+      <button data-tab="signup">회원가입</button>
+    </div>
+
+    <form id="authForm">
+      <label for="email">이메일</label>
+      <input id="email" name="email" type="email" placeholder="test@test.com" autocomplete="username" required>
+
+      <label for="password">비밀번호</label>
+      <input id="password" name="password" type="password" placeholder="4자 이상" autocomplete="current-password" required>
+
+      <div id="nameField" hidden>
+        <label for="name">이름</label>
+        <input id="name" name="name" placeholder="홍길동">
+      </div>
+
+      <button type="submit" class="submit" id="submitBtn">로그인</button>
+      <div class="msg" id="msg" hidden></div>
+    </form>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+function getToken() {
+  try { return localStorage.getItem("token"); } catch (e) { return null; }
+}
+function setToken(t) {
+  try { localStorage.setItem("token", t); } catch (e) {}
+}
+function showMsg(type, text) {
+  const el = $("#msg");
+  el.className = "msg " + type;
+  el.textContent = text;
+  el.hidden = false;
+}
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((data && data.message) || `요청 실패 (HTTP ${res.status})`);
+  return data;
+}
+
+// 이미 로그인된 토큰이 유효하면 바로 메인으로
+(async () => {
+  const t = getToken();
+  if (!t) return;
+  const res = await fetch("/members/me", { headers: { Authorization: "Bearer " + t } });
+  if (res.ok) location.replace("/");
+})();
+
+let mode = "login";
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  mode = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  const signup = mode === "signup";
+  $("#nameField").hidden = !signup;
+  $("#name").required = signup;
+  $("#password").autocomplete = signup ? "new-password" : "current-password";
+  $("#submitBtn").textContent = signup ? "회원가입" : "로그인";
+  $("#msg").hidden = true;
+});
+
+$("#authForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const btn = $("#submitBtn");
+  const email = $("#email").value.trim();
+  const password = $("#password").value;
+  btn.disabled = true;
+  $("#msg").hidden = true;
+  try {
+    if (mode === "signup") {
+      await post("/members/signup", { email, password, name: $("#name").value.trim() });
+      showMsg("ok", "회원가입 완료! 로그인 중…");
+    }
+    const res = await post("/members/login", { email, password });
+    setToken(res.token);
+    location.replace("/");
+  } catch (e) {
+    showMsg("err", e.message);
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

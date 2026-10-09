@@ -1,0 +1,4 @@
+# 이 파일을 application-local.properties 로 복사한 뒤 값을 채우세요. (git에 올라가지 않음)
+spring.datasource.password=MySQL 비밀번호
+# HS256 서명용 키: 32바이트(영문 32자) 이상
+jwt.secret=32자_이상의_충분히_긴_비밀_키를_입력하세요

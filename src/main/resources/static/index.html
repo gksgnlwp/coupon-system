@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>쿠폰 시스템 테스트</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
+    --primary: #2563eb; --primary-weak: #eff4ff; --ok: #16a34a; --ok-weak: #ecfdf3;
+    --err: #dc2626; --err-weak: #fef2f2; --code: #0f172a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --text: #e6e8eb; --muted: #9aa1ac; --line: #2a2f38;
+      --primary: #5b8cff; --primary-weak: #1c2640; --ok: #3ccf74; --ok-weak: #13281c;
+      --err: #ff6b6b; --err-weak: #2d1717; --code: #0a0c10;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .who { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .who b { color: var(--text); }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 40px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; justify-content: space-between; align-items: center; }
+  .wide { grid-column: 1 / -1; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  button { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--primary); color: #fff;
+    font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--primary); border: 1px solid var(--line); font-weight: 500; }
+  button.small { padding: 4px 10px; font-size: 13px; }
+  .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  ul.list { list-style: none; padding: 0; margin: 0; }
+  ul.list li { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 0; border-bottom: 1px solid var(--line); }
+  ul.list li:last-child { border-bottom: 0; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--primary-weak); color: var(--primary);
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .badge.zero { background: var(--err-weak); color: var(--err); }
+  .empty { color: var(--muted); padding: 12px 0; text-align: center; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stat { background: var(--bg); border-radius: 8px; padding: 10px; text-align: center; }
+  .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .stat.ok .n { color: var(--ok); } .stat.err .n { color: var(--err); }
+  .reasons { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  #log { background: var(--code); color: #d6deeb; border-radius: 8px; padding: 12px; height: 260px; overflow: auto;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; white-space: pre-wrap; word-break: break-all; }
+  #log .ok { color: #7ee2a8; } #log .err { color: #ff8b8b; } #log .req { color: #82aaff; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎟️ 쿠폰 시스템 테스트</h1>
+  <div class="who" id="who"></div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>쿠폰 생성</h2>
+    <form id="createForm">
+      <label>쿠폰 이름</label>
+      <input name="name" placeholder="선착순 10% 할인" required>
+      <label>수량</label>
+      <input name="quantity" type="number" min="1" value="100" required>
+      <div class="row"><button type="submit">생성</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>쿠폰 목록 <button class="ghost small" id="refreshCoupons">새로고침</button></h2>
+    <ul class="list" id="coupons"><li class="empty">불러오는 중…</li></ul>
+  </section>
+
+  <section class="card">
+    <h2>내 쿠폰 <button class="ghost small" id="refreshMine">새로고침</button></h2>
+    <ul class="list" id="mine"><li class="empty">불러오는 중…</li></ul>
+  </section>
+
+  <section class="card wide">
+    <h2>동시 발급 시뮬레이션</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+      <div><label>쿠폰 ID</label><input id="simCoupon" type="number" min="1" placeholder="목록에서 선택"></div>
+      <div><label>동시 요청 인원</label><input id="simCount" type="number" min="1" max="500" value="50"></div>
+    </div>
+    <div class="row"><button id="simBtn">시작</button></div>
+    <p class="hint">가상 회원을 만들어 전부 로그인시킨 뒤, 한꺼번에 발급 요청을 보냅니다. 수량보다 많이 발급되지 않는지 확인할 수 있어요. (가상 회원은 실제 DB에 저장됩니다)</p>
+    <div class="stats">
+      <div class="stat"><div class="n" id="simTotal">-</div><div class="l">요청</div></div>
+      <div class="stat ok"><div class="n" id="simOk">-</div><div class="l">발급 성공</div></div>
+      <div class="stat err"><div class="n" id="simFail">-</div><div class="l">실패</div></div>
+    </div>
+    <div class="reasons" id="simReasons"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>요청 로그 <button class="ghost small" id="clearLog">지우기</button></h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let token = null;
+try { token = localStorage.getItem("token"); } catch (e) {}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmt(dt) {
+  return dt ? String(dt).replace("T", " ").slice(0, 16) : "-";
+}
+function log(cls, text) {
+  const el = $("#log");
+  const line = document.createElement("div");
+  line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function api(method, path, body, opts = {}) {
+  const headers = {};
+  const t = opts.token !== undefined ? opts.token : token;
+  if (body) headers["Content-Type"] = "application/json";
+  if (t) headers["Authorization"] = "Bearer " + t;
+  if (!opts.quiet) log("req", `→ ${method} ${path}${body ? " " + JSON.stringify(body) : ""}`);
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!opts.quiet) log(res.ok ? "ok" : "err", `← ${res.status} ${data ? JSON.stringify(data) : ""}`);
+  if (!res.ok) {
+    const err = new Error((data && data.message) || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function setToken(t) {
+  token = t;
+  try { t ? localStorage.setItem("token", t) : localStorage.removeItem("token"); } catch (e) {}
+}
+
+function goLogin() {
+  location.replace("/login.html");
+}
+
+async function refreshMe() {
+  if (!token) { goLogin(); return false; }
+  try {
+    const me = await api("GET", "/members/me", null, { quiet: true });
+    $("#who").innerHTML = `<span><b>${esc(me.email)}</b> 로그인됨</span><button class="ghost small" id="logout">로그아웃</button>`;
+    $("#logout").onclick = () => { setToken(null); goLogin(); };
+    return true;
+  } catch (e) {
+    setToken(null);
+    goLogin();
+    return false;
+  }
+}
+
+async function loadCoupons() {
+  const ul = $("#coupons");
+  try {
+    const list = await api("GET", "/coupons", null, { quiet: true });
+    if (!list.length) { ul.innerHTML = `<li class="empty">쿠폰이 없어요. 먼저 생성해보세요.</li>`; return; }
+    ul.innerHTML = list.map(c => `
+      <li>
+        <div><div>${esc(c.name)}</div><div class="meta">ID ${c.id}</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge ${c.remainingQuantity > 0 ? "" : "zero"}">남음 ${c.remainingQuantity}</span>
+          <button class="small" data-issue="${c.id}" ${c.remainingQuantity > 0 ? "" : "disabled"}>발급</button>
+          <button class="ghost small" data-sim="${c.id}" title="시뮬레이션 대상으로 선택">⚡</button>
+        </div>
+      </li>`).join("");
+  } catch (e) {
+    ul.innerHTML = `<li class="empty">불러오기 실패: ${esc(e.message)} (서버가 켜져 있나요?)</li>`;
+  }
+}
+
+async function loadMine() {
+  const ul = $("#mine");
+  try {
+    const list = await api("GET", "/coupons/me", null, { quiet: true });
+    ul.innerHTML = list.length ? list.map(c => `
+      <li>
+        <div><div>${esc(c.couponName)}</div><div class="meta">발급 ${fmt(c.issuedAt)} · 만료 ${fmt(c.endAt)}</div></div>
+        <span class="badge">#${c.couponIssueId}</span>
+      </li>`).join("") : `<li class="empty">발급받은 쿠폰이 없어요</li>`;
+  } catch (e) {
+    ul.innerHTML = `<li class="empty">${esc(e.message)}</li>`;
+  }
+}
+
+$("#createForm").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = new FormData(ev.target);
+  try {
+    const res = await api("POST", "/coupons", { name: f.get("name"), quantity: Number(f.get("quantity")) });
+    $("#simCoupon").value = res.couponId;
+    loadCoupons();
+  } catch (e) {}
+};
+
+$("#coupons").onclick = async (ev) => {
+  const issue = ev.target.closest("[data-issue]");
+  const sim = ev.target.closest("[data-sim]");
+  if (sim) { $("#simCoupon").value = sim.dataset.sim; $("#simCoupon").focus(); return; }
+  if (!issue) return;
+  try {
+    await api("POST", `/coupons/${issue.dataset.issue}/issue`);
+  } catch (e) {}
+  loadCoupons();
+  loadMine();
+};
+
+$("#refreshCoupons").onclick = loadCoupons;
+$("#refreshMine").onclick = loadMine;
+$("#clearLog").onclick = () => { $("#log").innerHTML = ""; };
+
+// 동시 발급 시뮬레이션
+$("#simBtn").onclick = async () => {
+  const couponId = Number($("#simCoupon").value);
+  const count = Math.min(500, Math.max(1, Number($("#simCount").value) || 0));
+  if (!couponId) { log("err", "시뮬레이션할 쿠폰 ID를 입력하세요"); return; }
+
+  const btn = $("#simBtn");
+  btn.disabled = true;
+  ["#simTotal", "#simOk", "#simFail"].forEach(s => $(s).textContent = "-");
+  $("#simReasons").textContent = "";
+
+  try {
+    const prefix = "sim" + Date.now().toString(36);
+    btn.textContent = `가상 회원 ${count}명 준비 중…`;
+    log("req", `시뮬레이션: 가상 회원 ${count}명 생성/로그인`);
+    const tokens = await Promise.all(Array.from({ length: count }, async (_, i) => {
+      const email = `${prefix}-${i}@sim.test`;
+      await api("POST", "/members/signup", { email, password: "1234", name: `sim${i}` }, { quiet: true, token: null });
+      const res = await api("POST", "/members/login", { email, password: "1234" }, { quiet: true, token: null });
+      return res.token;
+    }));
+
+    btn.textContent = "동시 요청 중…";
+    log("req", `시뮬레이션: 쿠폰 #${couponId}에 ${count}건 동시 발급 요청`);
+    const started = performance.now();
+    const results = await Promise.allSettled(tokens.map(t =>
+      api("POST", `/coupons/${couponId}/issue`, null, { quiet: true, token: t })));
+    const ms = Math.round(performance.now() - started);
+
+    const ok = results.filter(r => r.status === "fulfilled").length;
+    const reasons = {};
+    results.filter(r => r.status === "rejected").forEach(r => {
+      reasons[r.reason.message] = (reasons[r.reason.message] || 0) + 1;
+    });
+    $("#simTotal").textContent = count;
+    $("#simOk").textContent = ok;
+    $("#simFail").textContent = count - ok;
+    $("#simReasons").textContent = Object.entries(reasons).map(([m, n]) => `실패 사유: ${m} × ${n}`).join(" · ");
+    log("ok", `시뮬레이션 완료 (${ms}ms): 성공 ${ok}, 실패 ${count - ok} ${JSON.stringify(reasons)}`);
+    loadCoupons();
+  } catch (e) {
+    log("err", "시뮬레이션 실패: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "시작";
+  }
+};
+
+refreshMe().then(ok => {
+  if (!ok) return;
+  loadMine();
+  loadCoupons();
+});
+</script>
+</body>
+</html>
