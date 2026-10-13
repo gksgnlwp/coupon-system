@@ -16,4 +16,8 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     @Query("select c from Coupon c where c.id = :id")
     Optional<Coupon> findByIdForUpdate(@Param("id") Long id);
 
+    // 영속성 컨텍스트 캐시를 거치지 않고 DB의 현재 재고를 바로 읽는다
+    @Query("select c.remainingQuantity from Coupon c where c.id = :id")
+    Optional<Integer> findRemainingQuantityById(@Param("id") Long id);
+
 }

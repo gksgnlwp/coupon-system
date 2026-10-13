@@ -49,7 +49,7 @@
     font-variant-numeric: tabular-nums; white-space: nowrap; }
   .badge.zero { background: var(--err-weak); color: var(--err); }
   .empty { color: var(--muted); padding: 12px 0; text-align: center; }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 12px; }
   .stat { background: var(--bg); border-radius: 8px; padding: 10px; text-align: center; }
   .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat .l { font-size: 12px; color: var(--muted); }
@@ -90,17 +90,21 @@
   </section>
 
   <section class="card wide">
-    <h2>동시 발급 시뮬레이션</h2>
+    <h2>동시 발급 시뮬레이션 <span class="meta">서버에서 실행</span></h2>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
-      <div><label>쿠폰 ID</label><input id="simCoupon" type="number" min="1" placeholder="목록에서 선택"></div>
-      <div><label>동시 요청 인원</label><input id="simCount" type="number" min="1" max="500" value="50"></div>
+      <div><label>쿠폰 ID</label><input id="simCoupon" type="number" min="1" placeholder="목록에서 ⚡ 선택"></div>
+      <div><label>가상 회원 수 (최대 10,000)</label><input id="simCount" type="number" min="1" max="10000" value="1000"></div>
+      <div><label>동시 스레드 수 (최대 200)</label><input id="simThreads" type="number" min="1" max="200" value="100"></div>
     </div>
     <div class="row"><button id="simBtn">시작</button></div>
-    <p class="hint">가상 회원을 만들어 전부 로그인시킨 뒤, 한꺼번에 발급 요청을 보냅니다. 수량보다 많이 발급되지 않는지 확인할 수 있어요. (가상 회원은 실제 DB에 저장됩니다)</p>
+    <p class="hint">서버가 스레드를 미리 띄워 두고 출발 신호 한 번에 동시에 발급 요청을 보냅니다. 가상 회원(sim-user-00001@sim.test …)은 처음 한 번만 만들어지고 다음부터 재사용돼요. 같은 쿠폰으로 다시 돌리면 이미 받은 회원은 "이미 발급받은 쿠폰"으로 실패해요.</p>
     <div class="stats">
       <div class="stat"><div class="n" id="simTotal">-</div><div class="l">요청</div></div>
       <div class="stat ok"><div class="n" id="simOk">-</div><div class="l">발급 성공</div></div>
       <div class="stat err"><div class="n" id="simFail">-</div><div class="l">실패</div></div>
+      <div class="stat"><div class="n" id="simTime">-</div><div class="l">소요 시간</div></div>
+      <div class="stat"><div class="n" id="simRps">-</div><div class="l">초당 처리</div></div>
+      <div class="stat" id="simCheckBox"><div class="n" id="simCheck">-</div><div class="l">재고 정합성</div></div>
     </div>
     <div class="reasons" id="simReasons"></div>
   </section>
@@ -231,48 +235,36 @@ $("#refreshCoupons").onclick = loadCoupons;
 $("#refreshMine").onclick = loadMine;
 $("#clearLog").onclick = () => { $("#log").innerHTML = ""; };
 
-// 동시 발급 시뮬레이션
+// 동시 발급 시뮬레이션 (서버 API)
 $("#simBtn").onclick = async () => {
   const couponId = Number($("#simCoupon").value);
-  const count = Math.min(500, Math.max(1, Number($("#simCount").value) || 0));
+  const users = Number($("#simCount").value) || 0;
+  const threads = Number($("#simThreads").value) || 0;
   if (!couponId) { log("err", "시뮬레이션할 쿠폰 ID를 입력하세요"); return; }
 
   const btn = $("#simBtn");
   btn.disabled = true;
-  ["#simTotal", "#simOk", "#simFail"].forEach(s => $(s).textContent = "-");
+  btn.textContent = "실행 중…";
+  ["#simTotal", "#simOk", "#simFail", "#simTime", "#simRps", "#simCheck"].forEach(s => $(s).textContent = "-");
+  $("#simCheckBox").className = "stat";
   $("#simReasons").textContent = "";
 
   try {
-    const prefix = "sim" + Date.now().toString(36);
-    btn.textContent = `가상 회원 ${count}명 준비 중…`;
-    log("req", `시뮬레이션: 가상 회원 ${count}명 생성/로그인`);
-    const tokens = await Promise.all(Array.from({ length: count }, async (_, i) => {
-      const email = `${prefix}-${i}@sim.test`;
-      await api("POST", "/members/signup", { email, password: "1234", name: `sim${i}` }, { quiet: true, token: null });
-      const res = await api("POST", "/members/login", { email, password: "1234" }, { quiet: true, token: null });
-      return res.token;
-    }));
-
-    btn.textContent = "동시 요청 중…";
-    log("req", `시뮬레이션: 쿠폰 #${couponId}에 ${count}건 동시 발급 요청`);
-    const started = performance.now();
-    const results = await Promise.allSettled(tokens.map(t =>
-      api("POST", `/coupons/${couponId}/issue`, null, { quiet: true, token: t })));
-    const ms = Math.round(performance.now() - started);
-
-    const ok = results.filter(r => r.status === "fulfilled").length;
-    const reasons = {};
-    results.filter(r => r.status === "rejected").forEach(r => {
-      reasons[r.reason.message] = (reasons[r.reason.message] || 0) + 1;
-    });
-    $("#simTotal").textContent = count;
-    $("#simOk").textContent = ok;
-    $("#simFail").textContent = count - ok;
-    $("#simReasons").textContent = Object.entries(reasons).map(([m, n]) => `실패 사유: ${m} × ${n}`).join(" · ");
-    log("ok", `시뮬레이션 완료 (${ms}ms): 성공 ${ok}, 실패 ${count - ok} ${JSON.stringify(reasons)}`);
+    const r = await api("POST", `/simulations/coupons/${couponId}/issue?users=${users}&threads=${threads}`);
+    $("#simTotal").textContent = r.requestCount.toLocaleString();
+    $("#simOk").textContent = r.successCount.toLocaleString();
+    $("#simFail").textContent = r.failCount.toLocaleString();
+    $("#simTime").textContent = r.elapsedMillis >= 1000 ? (r.elapsedMillis / 1000).toFixed(1) + "s" : r.elapsedMillis + "ms";
+    $("#simRps").textContent = Math.round(r.requestsPerSecond).toLocaleString();
+    $("#simCheck").textContent = r.consistent ? "정상" : "불일치";
+    $("#simCheckBox").className = "stat " + (r.consistent ? "ok" : "err");
+    const reasons = Object.entries(r.failReasons).map(([m, n]) => `${m} × ${n.toLocaleString()}`);
+    $("#simReasons").textContent =
+      `재고 ${r.remainingBefore} → ${r.remainingAfter} (총 수량 ${r.couponQuantity}, DB 발급 내역 ${r.totalIssuedInDb}건) · 스레드 ${r.threadCount}개` +
+      (reasons.length ? " · 실패 사유: " + reasons.join(", ") : "");
     loadCoupons();
   } catch (e) {
-    log("err", "시뮬레이션 실패: " + e.message);
+    $("#simReasons").textContent = "실패: " + e.message;
   } finally {
     btn.disabled = false;
     btn.textContent = "시작";
